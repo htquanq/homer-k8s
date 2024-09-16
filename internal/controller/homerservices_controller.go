@@ -17,21 +17,21 @@ limitations under the License.
 package controller
 
 import (
-	"context"
-	"fmt"
-	"os"
-	"reflect"
+  "context"
+  "fmt"
+  "os"
+  "reflect"
 
-	"gopkg.in/yaml.v3"
-	"k8s.io/apimachinery/pkg/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+  "gopkg.in/yaml.v3"
+  "k8s.io/apimachinery/pkg/runtime"
+  ctrl "sigs.k8s.io/controller-runtime"
+  "sigs.k8s.io/controller-runtime/pkg/client"
+  "sigs.k8s.io/controller-runtime/pkg/log"
+  "sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.com/go-logr/logr"
-	homerv1alpha1 "github.com/jplanckeel/homer-k8s/api/v1alpha1"
-	homerconfig "github.com/jplanckeel/homer-k8s/pkg/config"
+  "github.com/go-logr/logr"
+  homerv1alpha1 "github.com/jplanckeel/homer-k8s/api/v1alpha1"
+  homerconfig "github.com/jplanckeel/homer-k8s/pkg/config"
 )
 
 // Define logger
@@ -40,8 +40,8 @@ var logContext []interface{} = []interface{}{"controller", "homerservices", "con
 
 // HomerServicesReconciler reconciles a HomerServices object
 type HomerServicesReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
+  client.Client
+  Scheme *runtime.Scheme
 }
 
 //+kubebuilder:rbac:groups=homer.bananaops.io,resources=homerservices,verbs=get;list;watch;create;update;patch;delete
@@ -58,107 +58,127 @@ type HomerServicesReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.17.3/pkg/reconcile
 
+func (r *HomerServicesReconciler) FirstInit() (ctrl.Result, error) {
+  _ = log.FromContext(ctx)
+  var globalConfig homerconfig.HomerConfig
+  fileglobalConfig, _ := os.ReadFile("/config/global_config.yml")
+  err := yaml.Unmarshal(fileglobalConfig, &globalConfig)
+  if err != nil {
+    logger.Error(err, "error:")
+  }
+
+  // Add Stylesheet from globalConfig to localConfig
+  logger.Info("Updating stylesheet")
+  e, _ := yaml.Marshal(globalConfig)
+  err = os.WriteFile("/config/config.yml", e, 0600)
+  if err != nil {
+    logger.Error(err, "error:")
+  }
+
+  return ctrl.Result{}, nil
+}
+
 func (r *HomerServicesReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = log.FromContext(ctx)
+  _ = log.FromContext(ctx)
 
-	// Get all CRD HomerServices
-	var config homerconfig.HomerConfig
-	allServices, error := getAllHomerServices(ctx, r)
-	if error != nil {
-		fmt.Println(error, "unable to fetch HomerServicesList")
-		return ctrl.Result{}, error
-	}
-	for _, service := range allServices.Items {
-		config.Services = append(config.Services, service.Spec.Groups...)
-	}
+  // Get all CRD HomerServices
+  var config homerconfig.HomerConfig
+  allServices, error := getAllHomerServices(ctx, r)
+  if error != nil {
+    fmt.Println(error, "unable to fetch HomerServicesList")
+    return ctrl.Result{}, error
+  }
+  for _, service := range allServices.Items {
+    config.Services = append(config.Services, service.Spec.Groups...)
+  }
 
-	var localConfig homerconfig.HomerConfig
-	file, _ := os.ReadFile("/assets/config.yml")
-	err := yaml.Unmarshal(file, &localConfig)
-	if err != nil {
-		logger.Error(err, "error:")
-	}
+  var localConfig homerconfig.HomerConfig
+  file, _ := os.ReadFile("/assets/config.yml")
+  err := yaml.Unmarshal(file, &localConfig)
+  if err != nil {
+    logger.Error(err, "error:")
+  }
 
-	var globalConfig homerconfig.HomerConfig
-	fileglobalConfig, _ := os.ReadFile("/config/global_config.yml")
-	err = yaml.Unmarshal(fileglobalConfig, &globalConfig)
-	if err != nil {
-		logger.Error(err, "error:")
-	}
+  var globalConfig homerconfig.HomerConfig
+  fileglobalConfig, _ := os.ReadFile("/config/global_config.yml")
+  err = yaml.Unmarshal(fileglobalConfig, &globalConfig)
+  if err != nil {
+    logger.Error(err, "error:")
+  }
 
-	// Add Services in globalConfig in config
-	globalConfig.Services = append(globalConfig.Services, config.Services...)
+  // Add Services in globalConfig in config
+  globalConfig.Services = append(globalConfig.Services, config.Services...)
 
-	globalConfig.Services = sortServicesPerItemsLength(mergeGroupWithSameName(globalConfig.Services))
+  globalConfig.Services = sortServicesPerItemsLength(mergeGroupWithSameName(globalConfig.Services))
 
-	d, _ := yaml.Marshal(globalConfig)
+  d, _ := yaml.Marshal(globalConfig)
 
-	// Update config.yml if diff with config.Services
-	if !reflect.DeepEqual(globalConfig.Services, localConfig.Services) {
-		err = os.WriteFile("/assets/config.yml", d, 0600)
-		if err != nil {
-			logger.Error(err, "error:")
-		}
+  // Update config.yml if diff with config.Services
+  if !reflect.DeepEqual(globalConfig.Services, localConfig.Services) {
+    err = os.WriteFile("/assets/config.yml", d, 0600)
+    if err != nil {
+      logger.Error(err, "error:")
+    }
 
-		logger.Info("Homer Config Updated", logContext...)
-	}
+    logger.Info("Homer Config Updated", logContext...)
+  }
 
-	return ctrl.Result{}, nil
+  return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *HomerServicesReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&homerv1alpha1.HomerServices{}).
-		Complete(r)
+  return ctrl.NewControllerManagedBy(mgr).
+    For(&homerv1alpha1.HomerServices{}).
+    Complete(r)
 }
 
 // Get all HomerServices
 func getAllHomerServices(ctx context.Context, r *HomerServicesReconciler) (*homerv1alpha1.HomerServicesList, error) {
-	var listService homerv1alpha1.HomerServicesList
-	if err := r.List(ctx, &listService); err != nil {
-		return nil, err
-	}
+  var listService homerv1alpha1.HomerServicesList
+  if err := r.List(ctx, &listService); err != nil {
+    return nil, err
+  }
 
-	return &listService, nil
+  return &listService, nil
 }
 
 // Init logger slog for json and output to stdout
 func init() {
-	opts := zap.Options{
-		Development: false,
-	}
-	logger = zap.New(zap.UseFlagOptions(&opts))
+  opts := zap.Options{
+    Development: false,
+  }
+  logger = zap.New(zap.UseFlagOptions(&opts))
 }
 
 func mergeGroupWithSameName(g []homerv1alpha1.Group) []homerv1alpha1.Group {
-	groups := []homerv1alpha1.Group{}
+  groups := []homerv1alpha1.Group{}
 
-	for _, g1 := range g {
-		found := false
-		for i, g2 := range groups {
-			if g1.Name == g2.Name {
-				groups[i].Items = append(groups[i].Items, g1.Items...)
-				found = true
-				break
-			}
-		}
-		if !found {
-			groups = append(groups, g1)
-		}
-	}
+  for _, g1 := range g {
+    found := false
+    for i, g2 := range groups {
+      if g1.Name == g2.Name {
+        groups[i].Items = append(groups[i].Items, g1.Items...)
+        found = true
+        break
+      }
+    }
+    if !found {
+      groups = append(groups, g1)
+    }
+  }
 
-	return groups
+  return groups
 }
 
 func sortServicesPerItemsLength(g []homerv1alpha1.Group) []homerv1alpha1.Group {
-	for i := range g {
-		for j := range g {
-			if len(g[i].Items) < len(g[j].Items) {
-				g[i], g[j] = g[j], g[i]
-			}
-		}
-	}
+  for i := range g {
+    for j := range g {
+      if len(g[i].Items) < len(g[j].Items) {
+        g[i], g[j] = g[j], g[i]
+      }
+    }
+  }
 
-	return g
+  return g
 }
